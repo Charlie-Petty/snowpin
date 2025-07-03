@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 🔐 Helper: Check if user is an admin
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    // ✅ Pins Collection (approved and unapproved, all in one place)
+    match /pins/{pinId} {
+      // FINAL REVISED READ RULE:
+      // - Anyone can read if the pin is explicitly approved (approved == true)
+      // - OR if the 'approved' field DOES NOT EXIST (handles older pins).
+	  // - OR if the user is an Admin (admins can see everything for debugging/management).
+      allow read: if (resource.data.approved == true || !('approved' in resource.data)) || isAdmin();
+
+      // FINAL REVISED CREATE RULE:
+      // - Admins can create any pin
+      // - Regular users can create, but it MUST be set to `approved: false` initially,
+      //   and `createdBy` must match their UID.
+      allow create: if isAdmin() || (
+                      request.auth != null &&
+                      request.resource.data.createdBy == request.auth.uid &&
+                      request.resource.data.approved == false
+                    );
+
+      // REVISED UPDATE RULE: Specific for views increment for all authenticated users, general for creator/admin.
+      allow update: if (
+        (request.auth != null && (request.auth.uid == resource.data.createdBy || isAdmin())) || // Creator/Admin general update
+        (isAdmin() && request.resource.data.diff(resource.data).data.approved == true && resource.data.approved == false) || // Admin approves a pin (only changes 'approved' from false to true)
+        (request.auth != null && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']) && // Authenticated user can increment views
+         request.resource.data.views == (resource.data.views.exists() ? resource.data.views + 1 : 1))
+      );
+
+
+      // DELETE RULE (remains the same)
+      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == resource.data.createdBy);
+
+      // ✅ Reviews Subcollection (under a pin) - no changes
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      }
+
+      // ✅ Reactions Subcollection (under a pin) - no changes
+      match /reactions/{userId} {
+        allow read: if true;
+        allow create, update, delete: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // ✅ CollectionGroup access for all Reviews - no changes
+    match /{path=**}/reviews/{reviewId} {
+      allow read: if true;
+    }
+
+    // ✅ CollectionGroup access for all Reactions (for loading favorites efficiently) - no changes
+    match /{path=**}/reactions/{reactionId} {
+      allow read: if true;
+    }
+
+    // ✅ Users Collection (profile data) - no changes from last time
+    match /users/{userId} {
+      allow get: if true;
+      allow update: if request.auth != null && request.auth.uid == userId && (
+        request.resource.data.diff(resource.data).affectedKeys().hasAll([
+          'username', 'name', 'type', 'homeMountain', 'profilePic', 'state', 'bio'
+        ]) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinsSubmittedCount']) && request.resource.data.pinsSubmittedCount == resource.data.pinsSubmittedCount + 1) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinsReviewedCount']) && request.resource.data.pinsReviewedCount == resource.data.pinsReviewedCount + 1) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hitsDethronedCount']) && request.resource.data.hitsDethronedCount == resource.data.hitsDethronedCount + 1)
+      );
+    }
+
+    // 🚫 Lock down anything else - no changes
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

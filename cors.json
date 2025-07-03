@@ -1,0 +1,21 @@
+[
+  {
+    "origin": [
+      "http://localhost:5173",
+      "https://snowpin.app"
+    ],
+    "method": [
+      "GET",
+      "POST",
+      "PUT",
+      "DELETE",
+      "OPTIONS"
+    ],
+    "responseHeader": [
+      "Content-Type",
+      "Access-Control-Allow-Origin",
+      "X-Goog-Resumable"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

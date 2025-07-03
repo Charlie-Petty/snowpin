@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* Add these styles to your main CSS file */
+
+/* Hide the "Done" button by default */
+.leaflet-container-fullscreen .fullscreen-done-btn {
+    display: none;
+}
+
+/* When the container is in fullscreen mode, show the "Done" button... */
+.leaflet-container-fullscreen:fullscreen .fullscreen-done-btn {
+    display: block;
+}
+
+/* ...and hide the "Enter Fullscreen" button */
+.leaflet-container-fullscreen:fullscreen .fullscreen-enter-btn {
+    display: none;
+}
