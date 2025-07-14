@@ -5,7 +5,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import Slider from "react-slick";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
-import { FaMountain, FaPlus, FaCrown, FaTrophy, FaMedal } from 'react-icons/fa';
+import { FaMountain, FaPlus, FaCrown, FaTrophy, FaMedal, FaUserShield } from 'react-icons/fa';
 import { GiDeathSkull, GiPodiumWinner } from 'react-icons/gi';
 import { FaPoo, FaGrinStars } from 'react-icons/fa';
 import toast from "react-hot-toast";
@@ -74,6 +74,40 @@ const PinCarousel = ({ title, pins, emptyText, icon }) => {
                     </div>
                 ))}</Slider>
             ) : <p className="text-center text-gray-500 py-4">{emptyText}</p>}
+        </div>
+    );
+};
+
+// NEW: Component to display resort-specific reputation
+const ResortReputationList = ({ reputationData }) => {
+    if (!reputationData || reputationData.length === 0) {
+        return <p className="text-center text-gray-500 py-4">No resort reputation earned yet.</p>;
+    }
+
+    const getReputationBadge = (reputation) => {
+        if (reputation >= 1500) {
+            return <span className="text-xs font-bold text-yellow-600 bg-yellow-200 px-2 py-0.5 rounded-full">Local Legend</span>;
+        }
+        if (reputation >= 500) {
+            return <span className="text-xs font-bold text-blue-600 bg-blue-200 px-2 py-0.5 rounded-full">Proven Rider</span>;
+        }
+        return null;
+    };
+
+    return (
+        <div className="bg-white p-6 rounded-xl shadow-md">
+            <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">Resort Reputations</h2>
+            <ul className="space-y-3">
+                {reputationData.map(({ resort, score }) => (
+                    <li key={resort} className="flex items-center justify-between bg-gray-100 p-3 rounded-lg">
+                        <span className="font-semibold">{resort}</span>
+                        <div className="flex items-center gap-3">
+                            <span className="font-bold text-lg">{Math.round(score)}</span>
+                            {getReputationBadge(score)}
+                        </div>
+                    </li>
+                ))}
+            </ul>
         </div>
     );
 };
@@ -153,7 +187,7 @@ export default function PublicProfile() {
             // 4. Calculate all stats from the fetched data
             let maxDifficulty = 0, hardestPinData = null, totalFalls = 0;
             const tagFrequency = {}, resortStats = {};
-            let totalFunFactor = 0, funFactorCount = 0, totalDaredevilFactor = 0, daredevilCount = 0;
+            let totalFunFactor = 0, funFactorCount = 0;
             let totalPowder = 0, powderCount = 0, totalLanding = 0, landingCount = 0;
             const fallSeverityCounts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
 
@@ -173,7 +207,6 @@ export default function PublicProfile() {
                 (review.tags || []).forEach(tag => { tagFrequency[tag] = (tagFrequency[tag] || 0) + 1; });
 
                 if (typeof review.funFactor === 'number') { totalFunFactor += review.funFactor; funFactorCount++; }
-                if (typeof review.daredevilFactor === 'number') { totalDaredevilFactor += review.daredevilFactor; daredevilCount++; }
                 if (typeof review.powder === 'number') { totalPowder += review.powder; powderCount++; }
                 if (typeof review.landing === 'number') { totalLanding += review.landing; landingCount++; }
 
@@ -209,7 +242,6 @@ export default function PublicProfile() {
                 topTags,
                 analytics: {
                     averageFunFactor: funFactorCount > 0 ? totalFunFactor / funFactorCount : 0,
-                    averageDaredevilFactor: daredevilCount > 0 ? totalDaredevilFactor / daredevilCount : 0,
                     averagePowder: powderCount > 0 ? totalPowder / powderCount : 0,
                     averageLanding: landingCount > 0 ? totalLanding / landingCount : 0,
                     fallSeverityCounts,
@@ -260,6 +292,11 @@ export default function PublicProfile() {
   ];
   const statsForSelectedResort = dashboardStats.resortStats[selectedStatResort];
 
+  // NEW: Prepare resort reputation data for display
+  const sortedResortReputation = Object.entries(profile.resortReputation || {})
+    .map(([resort, score]) => ({ resort, score }))
+    .sort((a, b) => b.score - a.score);
+
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 bg-gray-100/50 space-y-8">
       {/* Profile Header */}
@@ -284,28 +321,17 @@ export default function PublicProfile() {
         </div>
       </div>
 
-      {/* Global Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* UPDATED: StatCards now include Global Credibility */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
+        <StatCard title="Global Credibility" value={profile.credibilityScore || 0} icon={<FaUserShield />}/>
         <StatCard title="Pins Completed" value={dashboardStats.global.pinsCompleted} icon="✔️"/>
         <StatCard title="Pins Founded" value={dashboardStats.global.pinsFounded} icon={<FaPlus/>}/>
         <StatCard title="Pins Ruled" value={dashboardStats.global.pinsDethroned} icon={<FaCrown/>}/>
-        <StatCard title="Mountains Shredded" value={dashboardStats.global.mountainsShredded} icon={<FaMountain/>}/>
-        <StatCard title="Fall Rate" value={`${dashboardStats.global.fallRate.toFixed(0)}%`} icon="💥"/>
-        {dashboardStats.global.hardestPin ?
-            <StatCard title="Hardest Pin" value={renderBlackDiamonds(dashboardStats.global.hardestPin.difficulty, 'text-base')} subtext={dashboardStats.global.hardestPin.name} icon="💎" link={`/pin/${dashboardStats.global.hardestPin.id}`}/>
-            : <StatCard title="Hardest Pin" value="N/A" icon="💎"/>
-        }
-        <div className="col-span-full bg-white p-4 rounded-lg shadow-sm">
-             <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Their Forte</h3>
-             <div className="flex flex-wrap justify-center gap-2">
-                {dashboardStats.topTags.length > 0 ? dashboardStats.topTags.map(tag => (
-                    <span key={tag} className="bg-sky-100 text-sky-800 text-sm font-medium px-3 py-1.5 rounded-full">{tag}</span>
-                )) : <p className="text-sm text-gray-500">This user's forte is yet to be discovered!</p>}
-             </div>
-        </div>
       </div>
       
-      {/* Analytics (Riding Style & Carnage Report) */}
+      {/* NEW: Resort Reputation Section */}
+      <ResortReputationList reputationData={sortedResortReputation} />
+      
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white p-6 rounded-xl shadow-md">
             <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">Riding Style</h2>
@@ -329,7 +355,6 @@ export default function PublicProfile() {
         </div>
       </div>
       
-      {/* Resort Breakdown */}
       <div className="bg-white p-6 rounded-xl shadow-md">
         <div className="flex flex-wrap justify-between items-center mb-4 gap-4">
             <h2 className="text-2xl font-bold text-gray-900">Resort Breakdown</h2>
@@ -352,7 +377,6 @@ export default function PublicProfile() {
         )}
       </div>
       
-      {/* Trophy Case */}
        <div className="bg-white p-6 rounded-xl shadow-md">
            <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center"><FaTrophy className="inline mr-2 text-yellow-500"/> Trophy Case</h2>
            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -366,11 +390,9 @@ export default function PublicProfile() {
            </div>
        </div>
 
-      {/* Pin Carousels */}
       <PinCarousel title="Founded Pins" icon={<FaPlus className="text-green-500"/>} pins={foundedPins} emptyText="This user hasn't founded any pins yet."/>
       <PinCarousel title="Pins Ruled" icon={<FaCrown className="text-yellow-500"/>} pins={ruledPins} emptyText="This user hasn't dethroned anyone... yet."/>
 
-      {/* Recent Activity */}
       <div className="bg-white p-6 rounded-xl shadow-md">
         <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">Recent Activity</h2>
         {recentReviewedPins.length > 0 ? (
@@ -393,5 +415,4 @@ export default function PublicProfile() {
         ) : <p className="text-gray-600 text-center text-lg py-8 bg-gray-50 rounded-md">This user has no recent reviews.</p>}
       </div>
     </div>
-  );
-}
+  ) }

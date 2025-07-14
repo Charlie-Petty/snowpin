@@ -1,5 +1,4 @@
-// src/utils/interactions.js
-import { doc, getDoc, setDoc, deleteDoc, runTransaction, collection, getDocs, query, where, collectionGroup, increment } from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteDoc, runTransaction, collection, getDocs, query, where, collectionGroup, increment, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import toast from "react-hot-toast";
 
@@ -41,7 +40,6 @@ export const toggleFavorite = async (pinId, userId) => {
       toast("Removed from favorites.", { icon: "💔" });
       return false;
     } else {
-      // FINAL FIX: Add the userId to the document. This is CRITICAL for the new security rule to work.
       await setDoc(favRef, { createdAt: new Date(), userId: userId });
       toast.success("Added to favorites!");
       return true;
@@ -142,4 +140,42 @@ export const fetchFavoritePinIds = async (userId) => {
         toast.error("Could not load your favorite pins.");
         return [];
     }
+};
+
+/**
+ * Marks a review as helpful, incrementing its helpfulCount.
+ * @param {string} pinId - The ID of the pin the review belongs to.
+ * @param {string} reviewId - The ID of the review to mark as helpful.
+ */
+export const handleReviewHelpful = async (pinId, reviewId) => {
+  if (!pinId || !reviewId) return;
+  const reviewRef = doc(db, "pins", pinId, "reviews", reviewId);
+  try {
+    await updateDoc(reviewRef, {
+      helpfulCount: increment(1)
+    });
+    toast.success("Marked as helpful!");
+  } catch (error) {
+    console.error("Error marking review as helpful:", error);
+    toast.error("Could not complete action.");
+  }
+};
+
+/**
+ * Flags a review as inaccurate, incrementing its flagCount.
+ * @param {string} pinId - The ID of the pin the review belongs to.
+ * @param {string} reviewId - The ID of the review to flag.
+ */
+export const handleReviewInaccurate = async (pinId, reviewId) => {
+  if (!pinId || !reviewId) return;
+  const reviewRef = doc(db, "pins", pinId, "reviews", reviewId);
+  try {
+    await updateDoc(reviewRef, {
+      flagCount: increment(1)
+    });
+    toast.success("Review flagged for admin review.");
+  } catch (error) {
+    console.error("Error flagging review:", error);
+    toast.error("Could not complete action.");
+  }
 };
