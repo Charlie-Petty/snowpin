@@ -1,5 +1,11 @@
 {
   "projects": {
     "default": "snowpin-8ea62"
+  },
+  "targets": {},
+  "etags": {
+    "snowpin-8ea62": {
+      "extensionInstances": {}
+    }
   }
 }
