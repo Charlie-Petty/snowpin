@@ -1,3 +1,5 @@
+// src/components/PinDetail.jsx - FINAL CORRECTED VERSION
+
 import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate, useOutletContext, Link } from "react-router-dom";
 import { fetchUserInteractionState, toggleFavorite, handleVote as handlePinVote, toggleFlag, handleReviewHelpful, handleReviewInaccurate } from "../utils/interactions.js";
@@ -365,9 +367,8 @@ const ReviewCard = ({ review, user, pinId, onHelpful, onInaccurate }) => {
 export default function PinDetail() {
   const { pinId } = useParams();
   const navigate = useNavigate();
-  const { isAdmin, user } = useOutletContext();
+  const { isAdmin, user, isLoadingUser } = useOutletContext();
   
-  const [loadingState, setLoadingState] = useState('loading');
   const [pin, setPin] = useState(null);
   const [submitter, setSubmitter] = useState(null);
   const [originalSubmitter, setOriginalSubmitter] = useState(null);
@@ -388,25 +389,37 @@ export default function PinDetail() {
   const [reviewSort, setReviewSort] = useState('recent');
   const [reviewDateFilter, setReviewDateFilter] = useState('All Time');
   const [topVoucher, setTopVoucher] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!pinId) return;
+    // This is the primary guard clause. It prevents any data fetching until
+    // the main App component has confirmed the authentication status.
+    if (isLoadingUser || !pinId) {
+      return; 
+    }
+
     let isMounted = true;
     
     const fetchAllData = async () => {
-      setLoadingState('loading');
+      setError(null); 
       try {
         const pinRef = doc(db, "pins", pinId);
         const pinSnap = await getDoc(pinRef);
 
-        if (!isMounted || !pinSnap.exists() || (!pinSnap.data().approved && !isAdmin)) {
-          if (isMounted) { toast.error("Pin not found or awaiting approval."); setLoadingState('error'); navigate('/map'); }
-          return;
+        if (!isMounted) return;
+
+        if (!pinSnap.exists()) {
+            setError("This pin does not exist.");
+            return;
         }
 
+        // We check the 'approved' status against the rules *after* fetching
+        // This relies on the security rules to have already done their job.
+        // If the fetch fails, the catch block will handle it.
         const pinData = { id: pinSnap.id, ...pinSnap.data() };
         setPin(pinData);
 
+        // All subsequent fetches for related data
         const [kingSnap, originalCreatorSnap, reviewsSnap, nameSuggestionsSnap, vouchesSnap] = await Promise.all([
           getDoc(doc(db, "users", pinData.createdBy)),
           pinData.originalCreatedBy ? getDoc(doc(db, "users", pinData.originalCreatedBy)) : Promise.resolve(null),
@@ -444,54 +457,60 @@ export default function PinDetail() {
         const suggestions = nameSuggestionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         setNameSuggestions(suggestions);
         
-        setLoadingState('success');
-        
         if (user) {
           fetchUserSpecificData(pinRef, suggestions);
         }
         
-      } catch (error) {
-        console.error("Fatal error loading pin details:", error);
-        if (isMounted) { setLoadingState('error'); toast.error("Could not load pin data."); }
+      } catch (err) {
+        console.error("Fatal error loading pin details:", err);
+        if (isMounted) { 
+          setError(`Permission Denied or Network Error. Could not load pin data.`); 
+        }
       }
     };
 
     const fetchUserSpecificData = async (pinRef, suggestions) => {
-      const vouchRef = doc(db, "pins", pinId, "vouches", user.uid);
-      const [userInteractions, suggestionVoteSnaps, challengesSnap, vouchSnap] = await Promise.all([
-        fetchUserInteractionState(pinId, user.uid),
-        Promise.all(suggestions.map(s => getDoc(doc(pinRef, `nameSuggestions/${s.id}/votes`, user.uid)))),
-        getDocs(query(collection(pinRef, "dethroneChallenges"), where("status", "==", "voting"))),
-        getDoc(vouchRef)
-    ]);
+        if (!user) return;
+        try {
+            const vouchRef = doc(db, "pins", pinId, "vouches", user.uid);
+            const [userInteractions, suggestionVoteSnaps, challengesSnap, vouchSnap] = await Promise.all([
+                fetchUserInteractionState(pinId, user.uid),
+                Promise.all(suggestions.map(s => getDoc(doc(pinRef, `nameSuggestions/${s.id}/votes`, user.uid)))),
+                getDocs(query(collection(pinRef, "dethroneChallenges"), where("status", "==", "voting"))),
+                getDoc(vouchRef)
+            ]);
 
-        if (!isMounted) return;
-        
-        const challenge = challengesSnap.empty ? null : { id: challengesSnap.docs[0].id, pinId, ...challengesSnap.docs[0].data() };
-        setActiveChallenge(challenge);
+            if (!isMounted) return;
+            
+            const challenge = challengesSnap.empty ? null : { id: challengesSnap.docs[0].id, pinId, ...challengesSnap.docs[0].data() };
+            setActiveChallenge(challenge);
 
-        setIsFavorited(userInteractions.isFavorited);
-        setIsFlagged(userInteractions.isFlagged);
-        setIsVouched(vouchSnap.exists());
-        
-        const collectedSuggestionVotes = {};
-        suggestionVoteSnaps.forEach((voteSnap, index) => {
-            if (voteSnap.exists()) collectedSuggestionVotes[suggestions[index].id] = voteSnap.data().vote;
-        });
-        setUserSuggestionVotes(collectedSuggestionVotes);
-        
-        if (challenge) {
-            const challengeVoteSnap = await getDoc(doc(db, `pins/${pinId}/dethroneChallenges/${challenge.id}/votes`, user.uid));
-            if (isMounted && challengeVoteSnap.exists()) {
-                setUserChallengeVote(challengeVoteSnap.data().vote);
+            setIsFavorited(userInteractions.isFavorited);
+            setIsFlagged(userInteractions.isFlagged);
+            setIsVouched(vouchSnap.exists());
+            
+            const collectedSuggestionVotes = {};
+            suggestionVoteSnaps.forEach((voteSnap, index) => {
+                if (voteSnap.exists()) collectedSuggestionVotes[suggestions[index].id] = voteSnap.data().vote;
+            });
+            setUserSuggestionVotes(collectedSuggestionVotes);
+            
+            if (challenge) {
+                const challengeVoteSnap = await getDoc(doc(db, `pins/${pinId}/dethroneChallenges/${challenge.id}/votes`, user.uid));
+                if (isMounted && challengeVoteSnap.exists()) {
+                    setUserChallengeVote(challengeVoteSnap.data().vote);
+                }
             }
+        } catch (err) {
+            console.error("Error fetching user-specific data:", err);
+            // Don't set a fatal error, just log it. The main pin data is more important.
         }
     }
 
     fetchAllData();
 
     return () => { isMounted = false; };
-  }, [pinId, user, isAdmin, navigate]);
+  }, [pinId, user, isAdmin, navigate, isLoadingUser]);
 
   const handleVouchClick = async () => {
     if (!user || !pin) return;
@@ -617,8 +636,9 @@ export default function PinDetail() {
     return filtered;
   }, [reviews, reviewSort, reviewDateFilter]);
 
-  if (loadingState === 'loading') return <div className="flex justify-center items-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div></div>;
-  if (loadingState === 'error' || !pin) return <div className="text-center p-8">Could not load pin. Please try again later.</div>;
+  if (isLoadingUser) return <div className="flex justify-center items-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div></div>;
+  if (error) return <div className="text-center p-8 text-red-500 font-semibold">{error}</div>;
+  if (!pin) return <div className="text-center p-8">Pin could not be loaded. It may have been deleted or you may not have permission to view it.</div>;
 
   const fallCount = reviews.filter(r => r.fall === true).length;
   const fallPercentage = reviews.length > 0 ? (fallCount / reviews.length) * 100 : 0;

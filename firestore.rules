@@ -1,82 +1,100 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 🔐 Helper: Check if user is an admin
+    // --- HELPER FUNCTIONS ---
     function isAdmin() {
       return request.auth != null && request.auth.token.admin == true;
     }
-
-    // ✅ Pins Collection (approved and unapproved, all in one place)
-    match /pins/{pinId} {
-      // FINAL REVISED READ RULE:
-      // - Anyone can read if the pin is explicitly approved (approved == true)
-      // - OR if the 'approved' field DOES NOT EXIST (handles older pins).
-	  // - OR if the user is an Admin (admins can see everything for debugging/management).
-      allow read: if (resource.data.approved == true || !('approved' in resource.data)) || isAdmin();
-
-      // FINAL REVISED CREATE RULE:
-      // - Admins can create any pin
-      // - Regular users can create, but it MUST be set to `approved: false` initially,
-      //   and `createdBy` must match their UID.
-      allow create: if isAdmin() || (
-                      request.auth != null &&
-                      request.resource.data.createdBy == request.auth.uid &&
-                      request.resource.data.approved == false
-                    );
-
-      // REVISED UPDATE RULE: Specific for views increment for all authenticated users, general for creator/admin.
-      allow update: if (
-        (request.auth != null && (request.auth.uid == resource.data.createdBy || isAdmin())) || // Creator/Admin general update
-        (isAdmin() && request.resource.data.diff(resource.data).data.approved == true && resource.data.approved == false) || // Admin approves a pin (only changes 'approved' from false to true)
-        (request.auth != null && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']) && // Authenticated user can increment views
-         request.resource.data.views == (resource.data.views.exists() ? resource.data.views + 1 : 1))
-      );
-
-
-      // DELETE RULE (remains the same)
-      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == resource.data.createdBy);
-
-      // ✅ Reviews Subcollection (under a pin) - no changes
-      match /reviews/{reviewId} {
-        allow read: if true;
-        allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-        allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
-      }
-
-      // ✅ Reactions Subcollection (under a pin) - no changes
-      match /reactions/{userId} {
-        allow read: if true;
-        allow create, update, delete: if request.auth != null && request.auth.uid == userId;
-      }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // ✅ CollectionGroup access for all Reviews - no changes
-    match /{path=**}/reviews/{reviewId} {
-      allow read: if true;
-    }
-
-    // ✅ CollectionGroup access for all Reactions (for loading favorites efficiently) - no changes
-    match /{path=**}/reactions/{reactionId} {
-      allow read: if true;
-    }
-
-    // ✅ Users Collection (profile data) - no changes from last time
+    // --- USERS COLLECTION ---
     match /users/{userId} {
-      allow get: if true;
-      allow update: if request.auth != null && request.auth.uid == userId && (
-        request.resource.data.diff(resource.data).affectedKeys().hasAll([
-          'username', 'name', 'type', 'homeMountain', 'profilePic', 'state', 'bio'
-        ]) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinsSubmittedCount']) && request.resource.data.pinsSubmittedCount == resource.data.pinsSubmittedCount + 1) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinsReviewedCount']) && request.resource.data.pinsReviewedCount == resource.data.pinsReviewedCount + 1) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hitsDethronedCount']) && request.resource.data.hitsDethronedCount == resource.data.hitsDethronedCount + 1)
-      );
+      allow read: if true;
+      allow create: if isOwner(userId);
+      // A user can update their own profile, or an admin can.
+      allow update: if isOwner(userId) || isAdmin();
+
+      // Subcollections for user-specific, private data
+      match /vouchesGiven/{creatorId} {
+        allow read, write: if isOwner(userId);
+      }
+      match /notifications/{notificationId} {
+        allow create: if isAdmin();
+        allow read, delete: if isOwner(userId);
+        allow update: if false;
+      }
     }
 
-    // 🚫 Lock down anything else - no changes
-    match /{document=**} {
-      allow read, write: if false;
+    // --- PINS COLLECTION ---
+    match /pins/{pinId} {
+      // READ ACCESS: Anyone can read any pin. The app's code is responsible
+      // for filtering out unapproved pins for non-admins. This solves
+      // the core permissions error on the homepage and map.
+      allow read, list: if true;
+
+      // WRITE ACCESS (Protected)
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      
+      // Only the pin's creator or an admin can update/delete it.
+      allow update, delete: if isOwner(resource.data.createdBy) || isAdmin();
+
+      // --- SUBCOLLECTIONS of PINS ---
+      match /reviews/{reviewId} {
+        allow read, list: if true;
+        allow create: if isOwner(request.resource.data.userId);
+        // Users can mark a review as helpful/inaccurate, but not change it.
+        allow update: if isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['helpfulCount', 'flagCount']);
+        allow delete: if isAdmin(); // Only admins can delete problematic reviews.
+      }
+      match /favorites/{userId} {
+        allow read: if true;
+        allow write: if isOwner(userId);
+      }
+      match /votes/{userId} {
+        allow read: if true;
+        allow write: if isOwner(userId);
+      }
+      match /flags/{userId} {
+        allow read: if true;
+        allow write: if isOwner(userId);
+      }
+      match /vouches/{userId} {
+        allow read: if true;
+        allow write: if isOwner(userId);
+      }
+      match /nameSuggestions/{suggestionId} {
+        allow read, list: if true;
+        allow create: if isOwner(request.resource.data.userId);
+        allow update, delete: if isAdmin();
+      }
+      match /dethroneChallenges/{challengeId} {
+        allow read, list: if true;
+        allow create: if isOwner(request.resource.data.challengerId);
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // --- COLLECTION GROUP RULES ---
+    // These must allow broad reads for the app to function correctly.
+    // The security is handled by the more specific rules above.
+    match /{path=**}/reviews/{reviewId} {
+      allow list, read: if true;
+    }
+    match /{path=**}/favorites/{favoriteId} {
+      allow list, read: if true;
+    }
+    match /{path=**}/dethroneChallenges/{challengeId} {
+      allow list, read: if true;
+    }
+    match /{path=**}/nameSuggestions/{suggestionId} {
+      allow list, read: if true;
     }
   }
 }

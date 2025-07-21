@@ -15,6 +15,38 @@
         { "fieldPath": "resort", "order": "ASCENDING" },
         { "fieldPath": "approved", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "pins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "createdBy", "order": "ASCENDING" },
+        { "fieldPath": "approved", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reviews",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "originalCreatedBy", "order": "ASCENDING" },
+        { "fieldPath": "approved", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "approved", "order": "ASCENDING" },
+        { "fieldPath": "featureName_lowercase", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
